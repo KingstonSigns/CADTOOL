@@ -87,25 +87,25 @@ left_{px} = \frac{m_{left}}{W_{face}} \cdot W_{canvas}, \quad
 top_{px} = \frac{m_{top}}{H_{face}} \cdot H_{canvas}
 $$
 
-- horizontal layout target height
+horizontal layout target height
 
 $$
 H_t = \min\left(H_{max}, \frac{W_{canvas} - \sum m_x}{\sum a_i}\right)
 $$
 
-- vertical layout target width
+vertical layout target width
 
 $$
 W_t = \min\left(W_{max}, \frac{H_{canvas} - \sum m_y}{\sum (1 / a_i)}\right)
 $$
 
-- chamfer depth clamp
+chamfer depth clamp
 
 $$
 c = \min\left(0.3d, \frac{w}{2}, \frac{h}{2}, \frac{d}{2}\right)
 $$
 
-- texture resolution scaling with image count
+texture resolution scaling with image count
 
 $$
 W_{desired} = \max\left(S_{base}, W_{face} \cdot ppi \cdot \sqrt{n}\right)
