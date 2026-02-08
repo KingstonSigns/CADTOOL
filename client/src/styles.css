@@ -417,6 +417,22 @@ body {
   padding: 2px 6px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  cursor: grab;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.dim-label.is-hover {
+  color: #1a1405;
+  border-color: #ffbe4a;
+  background: #ffcd6a;
+}
+
+.dim-label.is-editing {
+  cursor: text;
+  outline: 2px solid #ffbe4a;
+  background: #ffe2a3;
+  color: #1a1405;
 }
 
 /* canvas display */

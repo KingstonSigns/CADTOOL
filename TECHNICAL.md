@@ -34,6 +34,10 @@ Vite serves the frontend during development. Three.js renders the scene in a Web
 - `createPanelGeometry`, `createPanelShape`, `addScrewHoles`, `getScrewHoleCenters` build the panel mesh with optional holes
 - `getMatchedWidth`, `getMatchedHeight` compute proportional panel sizing for the primary image
 - `openHelp`, `closeHelp` show and hide the help overlay
+- `tryStartDimensionDrag`, `updateDimensionDrag`, `stopDimensionDrag` handle drag offsets for dimension labels
+- `pickDimensionHover`, `applyDimensionHoverColors` control hover highlighting
+- `enableLabelEditing`, `disableLabelEditing`, `applyDimensionFromLabel` manage inline label editing
+- `forwardViewportEvent` forwards overlay input to the canvas for orbit controls
 - `exportZip` packages stl, metadata, and image files
 
 ## Scene Graph
@@ -98,6 +102,9 @@ $$
 
 ## Dimension Controls
 Width, height, and depth are validated and clamped, with defaults set in `index.html`. Maximum height is 35 in, depth range is 0.1 to 1 in with a 0.1 step, and dimension edits update geometry immediately.
+
+## Dimension Interaction
+Dimension labels can be dragged to offset their measurement lines. Dragging is constrained to the axis normal that keeps the line parallel to its measured direction, and hover states highlight the line and label. Double-clicking a label enables inline editing, where pressing enter commits a new value and escape cancels. While labels are interactive, overlay input is forwarded to the WebGL canvas so orbit controls continue to work, and wheel events on the viewport are prevented from scrolling the page.
 
 ## Chamfer
 The chamfer toggle adds a 45 degree chamfer on all edges. Chamfer depth is computed from current panel depth, the printable area shrinks to match the chamfered face, and STL export includes chamfered geometry.

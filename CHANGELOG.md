@@ -15,6 +15,9 @@ All notable changes to this project will be documented in this file.
 - Increased image texture resolution based on face size and image count for sharper multi-image output.
 - Removed per-image match scaling logic and kept match width/height at the panel level only.
 - Added a help overlay modal with a help button and click-outside dismissal.
+- Added draggable dimension labels constrained to axis-aligned offsets, with hover highlights and inline editing.
+- Forwarded input events through the label overlay to keep orbit controls responsive.
+- Prevented browser scrolling while zooming in the 3d viewport.
 ### Added
 - multi-image support (up to 4 images) with per-slot uploads
 - dynamic horizontal/vertical layout that sizes images based on their aspect ratio
@@ -26,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - export bundles all active images and lists filenames in metadata
 - help modal content for navigation controls, viewcube usage, and panel workflow
 - higher quality canvas drawing for the image texture
+- dimension label drag and edit interactions
 
 ### Removed
 - single-image upload flow and its padding controls
@@ -37,3 +41,6 @@ All notable changes to this project will be documented in this file.
 - `createPanelGeometry`, `createPanelShape`, `addScrewHoles`, `getScrewHoleCenters` for geometry with screwholes
 - `exportZip` for bundling stl, metadata, and images
 - `openHelp`, `closeHelp` for help overlay behavior
+- `tryStartDimensionDrag`, `updateDimensionDrag`, `stopDimensionDrag`, `pickDimensionHover` for dimension label interactions
+- `enableLabelEditing`, `disableLabelEditing`, `applyDimensionFromLabel` for inline dimension edits
+- `forwardViewportEvent` for input forwarding on the label overlay

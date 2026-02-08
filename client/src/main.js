@@ -73,8 +73,23 @@ labelRenderer.setSize(viewport.clientWidth, viewport.clientHeight);
 labelRenderer.domElement.style.position = 'absolute';
 labelRenderer.domElement.style.top = '0';
 labelRenderer.domElement.style.left = '0';
-labelRenderer.domElement.style.pointerEvents = 'none';
+labelRenderer.domElement.style.pointerEvents = 'auto';
 viewport.appendChild(labelRenderer.domElement);
+labelRenderer.domElement.addEventListener('pointerdown', forwardViewportEvent);
+labelRenderer.domElement.addEventListener('pointermove', forwardViewportEvent);
+labelRenderer.domElement.addEventListener('pointerup', forwardViewportEvent);
+labelRenderer.domElement.addEventListener('wheel', forwardViewportEvent, { passive: false });
+labelRenderer.domElement.addEventListener('pointerdown', (event) => {
+  if (tryStartDimensionDrag(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+viewport.addEventListener('wheel', (event) => {
+  if (event.target === renderer.domElement || event.target === labelRenderer.domElement) {
+    event.preventDefault();
+  }
+}, { passive: false });
 
 // orbit controls
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -134,10 +149,52 @@ const dimensionGroup = new THREE.Group();
 scene.add(dimensionGroup);
 const dimensionLabels = createDimensionLabels();
 const currentImageObjectUrls = Array.from({ length: 4 }, () => null);
+const dimensionOffsets = {
+  width: new THREE.Vector3(0, 0, 0),
+  height: new THREE.Vector3(0, 0, 0),
+  depth: new THREE.Vector3(0, 0, 0)
+};
+const dimensionDrag = {
+  active: null,
+  startX: 0,
+  startY: 0,
+  startOffset: new THREE.Vector3(0, 0, 0)
+};
+const dimensionVisuals = {
+  width: {},
+  height: {},
+  depth: {}
+};
+const dimensionHover = {
+  active: null
+};
+const DIMENSION_BASE_COLOR = new THREE.Color(0x9aa4b0);
+const DIMENSION_HOVER_COLOR = new THREE.Color(0xffc857);
+let activeLabelEditor = null;
 
 const SCREW_EDGE_OFFSET_IN = 0.5;
 const M4_DIAMETER_IN = 4 / 25.4;
 const M4_RADIUS_IN = M4_DIAMETER_IN / 2;
+
+function isLabelTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('.dim-label'));
+}
+
+function forwardViewportEvent(event) {
+  if (isLabelTarget(event.target) || activeLabelEditor) {
+    return;
+  }
+  if (event.target === renderer.domElement) {
+    return;
+  }
+  if (event.type === 'wheel') {
+    event.preventDefault();
+    renderer.domElement.dispatchEvent(new WheelEvent(event.type, event));
+    return;
+  }
+  renderer.domElement.dispatchEvent(new PointerEvent(event.type, event));
+}
 
 // panel mesh creation
 function createPanelMesh() {
@@ -500,6 +557,11 @@ const clock = new THREE.Clock();
 const viewHelper = new ViewHelper(camera, renderer.domElement);
 viewHelper.center.copy(controls.target);
 renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (tryStartDimensionDrag(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (viewHelper.handleClick(event)) {
     event.preventDefault();
     event.stopPropagation();
@@ -619,8 +681,6 @@ function updateDimensionHelpers() {
   });
   dimensionGroup.clear();
 
-  const material = new THREE.LineBasicMaterial({ color: 0x9aa4b0 });
-  const arrowMaterial = new THREE.MeshBasicMaterial({ color: 0x9aa4b0 });
   const arrowSize = Math.max(0.4, Math.min(state.width, state.height) * 0.03);
   const coneGeo = new THREE.ConeGeometry(arrowSize * 0.4, arrowSize, 12);
   const epsilon = 0.02;
@@ -630,16 +690,16 @@ function updateDimensionHelpers() {
   const halfD = state.depth / 2;
 
   const baseY = 0;
-  const wStart = new THREE.Vector3(-halfW, baseY, halfD + epsilon);
-  const wEnd = new THREE.Vector3(halfW, baseY, halfD + epsilon);
-  const hStart = new THREE.Vector3(halfW + epsilon, baseY, halfD);
-  const hEnd = new THREE.Vector3(halfW + epsilon, state.height + baseY, halfD);
-  const dStart = new THREE.Vector3(halfW, state.height + baseY + epsilon, -halfD);
-  const dEnd = new THREE.Vector3(halfW, state.height + baseY + epsilon, halfD);
+  const wStart = new THREE.Vector3(-halfW, baseY, halfD + epsilon).add(dimensionOffsets.width);
+  const wEnd = new THREE.Vector3(halfW, baseY, halfD + epsilon).add(dimensionOffsets.width);
+  const hStart = new THREE.Vector3(halfW + epsilon, baseY, halfD).add(dimensionOffsets.height);
+  const hEnd = new THREE.Vector3(halfW + epsilon, state.height + baseY, halfD).add(dimensionOffsets.height);
+  const dStart = new THREE.Vector3(halfW, state.height + baseY + epsilon, -halfD).add(dimensionOffsets.depth);
+  const dEnd = new THREE.Vector3(halfW, state.height + baseY + epsilon, halfD).add(dimensionOffsets.depth);
 
-  addDimensionLine(wStart, wEnd, material, coneGeo, arrowMaterial);
-  addDimensionLine(hStart, hEnd, material, coneGeo, arrowMaterial);
-  addDimensionLine(dStart, dEnd, material, coneGeo, arrowMaterial);
+  dimensionVisuals.width = addDimensionLine(wStart, wEnd, coneGeo);
+  dimensionVisuals.height = addDimensionLine(hStart, hEnd, coneGeo);
+  dimensionVisuals.depth = addDimensionLine(dStart, dEnd, coneGeo);
 
   dimensionLabels.width.element.textContent = `${state.width} in`;
   dimensionLabels.height.element.textContent = `${state.height} in`;
@@ -652,9 +712,252 @@ function updateDimensionHelpers() {
   dimensionGroup.add(dimensionLabels.width);
   dimensionGroup.add(dimensionLabels.height);
   dimensionGroup.add(dimensionLabels.depth);
+
+  applyDimensionHoverColors();
 }
 
 updateDimensionHelpers();
+
+const dimensionNormals = {
+  width: new THREE.Vector3(0, 0, 1),
+  height: new THREE.Vector3(1, 0, 0),
+  depth: new THREE.Vector3(0, 1, 0)
+};
+const dimensionHitRadius = 14;
+
+function enableLabelEditing(key) {
+  if (activeLabelEditor) return;
+  const label = dimensionLabels[key];
+  if (!label) return;
+  const el = label.element;
+  activeLabelEditor = key;
+  el.contentEditable = 'true';
+  el.classList.add('is-editing');
+  el.focus();
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function disableLabelEditing(commit) {
+  if (!activeLabelEditor) return;
+  const key = activeLabelEditor;
+  const label = dimensionLabels[key];
+  const el = label?.element;
+  if (el) {
+    if (commit) {
+      applyDimensionFromLabel(key, el.textContent || '');
+    }
+    el.contentEditable = 'false';
+    el.classList.remove('is-editing');
+  }
+  activeLabelEditor = null;
+}
+
+function applyDimensionFromLabel(key, rawText) {
+  const cleaned = String(rawText).toLowerCase().replace(/[^0-9.]/g, '');
+  const value = Number(cleaned);
+  if (!Number.isFinite(value)) {
+    normalizeDimensionInputs();
+    updateDimensionHelpers();
+    return;
+  }
+  if (key === 'width') {
+    state.width = parseDimension(value, state.width, 1);
+    widthInput.value = state.width.toFixed(2);
+  } else if (key === 'height') {
+    state.height = parseDimension(value, state.height, 1, 35);
+    heightInput.value = state.height.toFixed(2);
+  } else if (key === 'depth') {
+    state.depth = parseDimension(value, state.depth, 0.1, 1);
+    depthInput.value = state.depth.toFixed(2);
+  }
+  updatePanelGeometry();
+  updateFrontTexture();
+  normalizeDimensionInputs();
+  updateDimensionHelpers();
+}
+
+function getLabelScreenPosition(label) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const projected = label.position.clone().project(camera);
+  return {
+    x: (projected.x * 0.5 + 0.5) * rect.width,
+    y: (-projected.y * 0.5 + 0.5) * rect.height
+  };
+}
+
+function pickDimensionLabel(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const labels = {
+    width: dimensionLabels.width,
+    height: dimensionLabels.height,
+    depth: dimensionLabels.depth
+  };
+  let closest = null;
+  let closestDist = Infinity;
+  Object.entries(labels).forEach(([key, label]) => {
+    const pos = getLabelScreenPosition(label);
+    const dx = pos.x - x;
+    const dy = pos.y - y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < dimensionHitRadius && dist < closestDist) {
+      closest = key;
+      closestDist = dist;
+    }
+  });
+  return closest;
+}
+
+function getScreenPoint(vec3) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const projected = vec3.clone().project(camera);
+  return {
+    x: (projected.x * 0.5 + 0.5) * rect.width,
+    y: (-projected.y * 0.5 + 0.5) * rect.height
+  };
+}
+
+function pointToSegmentDistance(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const apx = px - ax;
+  const apy = py - ay;
+  const abLenSq = (abx * abx) + (aby * aby) || 1;
+  const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+  const cx = ax + abx * t;
+  const cy = ay + aby * t;
+  const dx = px - cx;
+  const dy = py - cy;
+  return Math.hypot(dx, dy);
+}
+
+function pickDimensionHover(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const labelKey = pickDimensionLabel(event);
+  let closest = labelKey;
+  let closestDist = labelKey ? 0 : Infinity;
+
+  const lineHitThreshold = 8;
+  ['width', 'height', 'depth'].forEach((key) => {
+    const visual = dimensionVisuals[key];
+    if (!visual?.start || !visual?.end) return;
+    const a = getScreenPoint(visual.start);
+    const b = getScreenPoint(visual.end);
+    const dist = pointToSegmentDistance(x, y, a.x, a.y, b.x, b.y);
+    if (dist < lineHitThreshold && dist < closestDist) {
+      closest = key;
+      closestDist = dist;
+    }
+  });
+
+  return closest;
+}
+
+function applyDimensionHoverColors() {
+  ['width', 'height', 'depth'].forEach((key) => {
+    const visual = dimensionVisuals[key];
+    if (!visual?.line || !visual?.coneA || !visual?.coneB) return;
+    const color = (dimensionHover.active === key)
+      ? DIMENSION_HOVER_COLOR
+      : DIMENSION_BASE_COLOR;
+    visual.line.material.color.copy(color);
+    visual.coneA.material.color.copy(color);
+    visual.coneB.material.color.copy(color);
+    dimensionLabels[key].element.classList.toggle('is-hover', dimensionHover.active === key);
+  });
+}
+
+function updateDimensionHover(event) {
+  if (dimensionDrag.active) return;
+  const key = pickDimensionHover(event);
+  if (key === dimensionHover.active) return;
+  dimensionHover.active = key;
+  applyDimensionHoverColors();
+}
+
+function tryStartDimensionDrag(event) {
+  if (activeLabelEditor) return false;
+  const key = pickDimensionLabel(event);
+  if (!key) return false;
+  const rect = renderer.domElement.getBoundingClientRect();
+  dimensionDrag.active = key;
+  dimensionDrag.startX = event.clientX - rect.left;
+  dimensionDrag.startY = event.clientY - rect.top;
+  dimensionDrag.startOffset.copy(dimensionOffsets[key]);
+  controls.enabled = false;
+  return true;
+}
+
+function updateDimensionDrag(event) {
+  if (!dimensionDrag.active) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const dx = (event.clientX - rect.left) - dimensionDrag.startX;
+  const dy = (event.clientY - rect.top) - dimensionDrag.startY;
+  const label = dimensionLabels[dimensionDrag.active];
+  const distance = camera.position.distanceTo(label.position);
+  const worldPerPixel = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * distance) / rect.height;
+
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+  const delta = right.multiplyScalar(dx * worldPerPixel).add(up.multiplyScalar(-dy * worldPerPixel));
+
+  const normal = dimensionNormals[dimensionDrag.active];
+  const offset = normal.clone().multiplyScalar(delta.dot(normal));
+  dimensionOffsets[dimensionDrag.active]
+    .copy(dimensionDrag.startOffset)
+    .add(offset);
+
+  updateDimensionHelpers();
+}
+
+function stopDimensionDrag() {
+  if (!dimensionDrag.active) return;
+  dimensionDrag.active = null;
+  controls.enabled = true;
+}
+
+window.addEventListener('pointermove', (event) => {
+  updateDimensionDrag(event);
+  updateDimensionHover(event);
+});
+
+window.addEventListener('pointerup', (event) => {
+  stopDimensionDrag();
+  updateDimensionHover(event);
+});
+
+window.addEventListener('blur', () => {
+  stopDimensionDrag();
+});
+
+['width', 'height', 'depth'].forEach((key) => {
+  const el = dimensionLabels[key].element;
+  el.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    enableLabelEditing(key);
+  });
+  el.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      disableLabelEditing(true);
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      disableLabelEditing(false);
+    }
+  });
+  el.addEventListener('blur', () => {
+    disableLabelEditing(true);
+  });
+});
 
 // image control enablement
 function updateImageControlsEnabled(enabled) {
@@ -1097,7 +1400,9 @@ function updateImagePlane() {
 }
 
 // dimension line with arrowheads
-function addDimensionLine(start, end, lineMaterial, coneGeo, coneMaterial) {
+function addDimensionLine(start, end, coneGeo) {
+  const lineMaterial = new THREE.LineBasicMaterial({ color: DIMENSION_BASE_COLOR.clone() });
+  const coneMaterial = new THREE.MeshBasicMaterial({ color: DIMENSION_BASE_COLOR.clone() });
   const lineGeom = new THREE.BufferGeometry().setFromPoints([start, end]);
   const line = new THREE.Line(lineGeom, lineMaterial);
   dimensionGroup.add(line);
@@ -1115,6 +1420,8 @@ function addDimensionLine(start, end, lineMaterial, coneGeo, coneMaterial) {
   coneB.position.copy(end).add(dir.clone().multiplyScalar(-arrowOffset));
   coneB.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
   dimensionGroup.add(coneB);
+
+  return { line, coneA, coneB, start: start.clone(), end: end.clone() };
 }
 
 
