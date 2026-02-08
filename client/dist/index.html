@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Signage Panel Configurator</title>
+    <!-- base styles -->
+    <script type="module" crossorigin src="/assets/index-CGxnieLY.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CkULAnLa.css">
+  </head>
+  <body>
+    <!-- app layout -->
+    <div id="app">
+      <!-- 3d viewport -->
+      <div id="viewport"></div>
+      <!-- branding -->
+      <img id="logo" src="/assets/logo-BqnbMShG.png" alt="Logo" />
+      <!-- side panel -->
+      <aside id="panel">
+        <!-- panel header -->
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <div>
+              <div class="title">Panel Builder</div>
+              <div class="subtitle">CAD Preview</div>
+            </div>
+            <!-- panel collapse toggle -->
+            <button id="togglePanel" class="icon-toggle" type="button" aria-label="Collapse panel">
+              <span class="chevron">▾</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- panel body -->
+        <div id="panel-content">
+        <!-- dimensions section -->
+        <div class="section collapsible" data-section="dimensions">
+          <div class="section-header">
+            <div class="section-title">Dimensions</div>
+            <button class="section-toggle" type="button" aria-label="Collapse section">▾</button>
+          </div>
+          <label class="field">
+            <span>Width (in)</span>
+            <input id="width" type="number" min="1" step="0.1" value="30" />
+          </label>
+          <label class="field">
+            <span>Height (in) <em class="note">max. 35 inches</em></span>
+            <input id="height" type="number" min="1" max="35" step="0.1" value="10" />
+          </label>
+          <label class="field">
+            <span>Depth (in) <em class="note">max. 1 inch</em></span>
+            <input id="depth" type="number" min="0.1" max="1" step="0.1" value="0.2" />
+          </label>
+          <label class="field field-inline">
+            <span>Chamfer Edges (45°)</span>
+            <input id="chamfer" type="checkbox" />
+          </label>
+        </div>
+
+        <!-- front image section -->
+        <div class="section collapsible collapsed" data-section="front-image">
+          <div class="section-header">
+            <div class="section-title">Front Image</div>
+            <button class="section-toggle" type="button" aria-label="Collapse section">▾</button>
+          </div>
+          <label class="field">
+            <span>Upload</span>
+            <input id="image" type="file" accept="image/*" />
+          </label>
+          <label class="field">
+            <span>Horizontal Padding (in)</span>
+            <input id="padX" type="number" min="0" step="0.1" value="0" />
+          </label>
+          <label class="field">
+            <span>Vertical Padding (in)</span>
+            <input id="padY" type="number" min="0" step="0.1" value="0" />
+          </label>
+          <button id="resetPadding" class="secondary" type="button">Reset Padding to Aspect</button>
+          <div class="subsection">
+            <div class="section-title">Scale Proportionally</div>
+            <div class="button-row">
+              <button id="matchWidth" class="secondary" type="button">Match Width to Image</button>
+              <button id="matchHeight" class="secondary" type="button">Match Height to Image</button>
+            </div>
+          </div>
+          <div id="imageStatus" class="status">No image loaded</div>
+        </div>
+
+        <!-- export section -->
+        <div class="section collapsible collapsed" data-section="export">
+          <div class="section-header">
+            <div class="section-title">Export</div>
+            <button class="section-toggle" type="button" aria-label="Collapse section">▾</button>
+          </div>
+          <button id="exportBtn" class="primary">Download STL + Assets</button>
+          <div class="hint">Exports STL, image, and metadata as a ZIP.</div>
+        </div>
+
+        <!-- backend section -->
+        <div class="section small collapsible collapsed" data-section="backend">
+          <div class="section-header">
+            <div class="section-title">Backend</div>
+            <button class="section-toggle" type="button" aria-label="Collapse section">▾</button>
+          </div>
+          <div class="hint">API endpoints are scaffolded in the server folder.</div>
+        </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- app script -->
+  </body>
+</html>
