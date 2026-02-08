@@ -13,7 +13,7 @@ function downloadBlob(blob, filename) {
 }
 
 // build and download the export zip
-export async function exportZip({ mesh, dimensions, imageFile, chamfer }) {
+export async function exportZip({ mesh, dimensions, imageFiles, chamfer }) {
   const exporter = new STLExporter();
   const stlString = exporter.parse(mesh, { binary: false });
   const stlBlob = new Blob([stlString], { type: 'model/stl' });
@@ -30,7 +30,7 @@ export async function exportZip({ mesh, dimensions, imageFile, chamfer }) {
     `chamfer_enabled=${chamferEnabled}`,
     `chamfer_angle_deg=${chamferEnabled ? 45 : 0}`,
     `chamfer_depth_in=${chamferDepth}`,
-    `image_filename=${imageFile ? imageFile.name : 'none'}`,
+    `image_filenames=${imageFiles?.length ? imageFiles.map((file) => file.name).join(',') : 'none'}`,
     `generated_at=${new Date().toISOString()}`
   ].join('\n');
 
@@ -39,8 +39,12 @@ export async function exportZip({ mesh, dimensions, imageFile, chamfer }) {
   zip.file('panel.stl', stlBlob);
   zip.file('metadata.txt', metadata);
 
-  if (imageFile) {
-    zip.file(`image_${imageFile.name}`, imageFile);
+  if (Array.isArray(imageFiles)) {
+    imageFiles.forEach((file) => {
+      if (file) {
+        zip.file(`image_${file.name}`, file);
+      }
+    });
   }
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });

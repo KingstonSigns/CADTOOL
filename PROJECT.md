@@ -1,20 +1,22 @@
 # Project: Web Three Interface (Signage Panel Configurator)
 
 ## Overview
-A browser-based 3D configurator that lets users create a signage panel by adjusting dimensions (width/height/depth), uploading a front-face image, optionally chamfering edges, previewing in a CAD-style Three.js environment, and exporting an STL with a metadata text file and image bundled into a ZIP. A backend scaffold exists for future storage and processing.
+A browser-based 3D configurator that lets users create a signage panel by adjusting dimensions (width/height/depth), uploading up to four front-face images, optionally chamfering edges, previewing in a CAD-style Three.js environment, and exporting an STL with a metadata text file and images bundled into a ZIP. A backend scaffold exists for future storage and processing.
 
 ## Current Capabilities
 - Full-screen 3D environment with a right-side control panel.
 - Panel dimensions with constraints and input validation.
 - Optional 45° chamfer using 30% of depth.
 - Optional M4 screwholes at 0.5 in from panel edges.
-- Image upload mapped to the printable face area.
-- Padding controls with aspect-lock behavior.
+- Up to four images mapped to the printable face area.
+- Horizontal, vertical, and 2x2 grid image layouts.
+- Per-image rotation and per-image margins for spacing.
 - “Match Width/Height to Image” proportional sizing.
 - Collapsible panel and collapsible sections.
 - Infinite grid with distance fade for CAD-like feel.
-- STL + image + metadata ZIP export.
-- Viewcube overlay for quick camera snapping.
+- STL + images + metadata ZIP export.
+- Viewcube overlay for quick camera snapping and dragging.
+- Help overlay with concise navigation guidance.
 
 ## Goals
 - Clear, responsive 3D preview with CAD aesthetics.
@@ -34,8 +36,9 @@ A browser-based 3D configurator that lets users create a signage panel by adjust
 - Panel mesh geometry with optional chamfer.
 - Optional screwholes in panel geometry.
 - Separate image plane sized to printable area.
-- Canvas-based texture fitting with padding support.
-- UI controls for dimensions, image, padding, chamfer, export.
+- Canvas-based texture fitting with multi-image layout and margins.
+- UI controls for dimensions, images, margins, chamfer, export.
+- Help overlay for navigation and workflow.
 - Export via STLExporter + JSZip.
 
 ### Backend Scaffold
@@ -55,7 +58,7 @@ A browser-based 3D configurator that lets users create a signage panel by adjust
 - `client/`
   - `index.html` UI layout
   - `src/main.js` scene, UI wiring, geometry logic
-  - `src/texture.js` image fitting and canvas texture
+  - `src/texture.js` image layout and canvas texture
   - `src/export.js` STL + ZIP export
   - `src/styles.css` CAD styling
 
@@ -67,7 +70,7 @@ A browser-based 3D configurator that lets users create a signage panel by adjust
 
 ## Milestones
 1. Core 3D preview and UI scaffold.
-2. Image mapping + padding + proportional sizing.
+2. Multi-image mapping and layout logic.
 3. Chamfered geometry support.
 4. Export package with full metadata.
 5. Backend integration (future).
@@ -77,5 +80,5 @@ A browser-based 3D configurator that lets users create a signage panel by adjust
 - Smoke checks in Chrome, Safari, and Firefox.
 
 ## Notes
-- STL does not encode textures; the image is included separately in the ZIP.
-- Metadata includes dimensions, padding, and chamfer details.
+- STL does not encode textures; images are included separately in the ZIP.
+- Metadata includes dimensions, chamfer details, and image filenames.

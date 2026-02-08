@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 // texture and export utilities
-import { createFittedTexture, createHoleMaskTexture } from './texture.js';
+import { createLayoutTexture, createHoleMaskTexture } from './texture.js';
 import { exportZip } from './export.js';
 
 // panel ui elements
@@ -13,10 +13,9 @@ const widthInput = document.querySelector('#width');
 const heightInput = document.querySelector('#height');
 const depthInput = document.querySelector('#depth');
 const chamferInput = document.querySelector('#chamfer');
-const imageInput = document.querySelector('#image');
-const padXInput = document.querySelector('#padX');
-const padYInput = document.querySelector('#padY');
-const resetPaddingBtn = document.querySelector('#resetPadding');
+const imageLayoutInput = document.querySelector('#imageLayout');
+const addImageSlotBottomBtn = document.querySelector('#addImageSlotBottom');
+const imageSlots = Array.from(document.querySelectorAll('#imageSlots .slot'));
 const matchWidthBtn = document.querySelector('#matchWidth');
 const matchHeightBtn = document.querySelector('#matchHeight');
 const screwHolesInput = document.querySelector('#screwholes');
@@ -26,6 +25,8 @@ const imageStatus = document.querySelector('#imageStatus');
 const panel = document.querySelector('#panel');
 const appRoot = document.querySelector('#app');
 const sectionToggles = document.querySelectorAll('.section-toggle');
+const helpOverlay = document.querySelector('#helpOverlay');
+const helpBtn = document.querySelector('#helpBtn');
 
 // app state for geometry and image
 const state = {
@@ -34,10 +35,14 @@ const state = {
   depth: Number(depthInput.value),
   chamfer: chamferInput.checked,
   screwHoles: screwHolesInput?.checked ?? false,
-  padX: Number(padXInput.value),
-  padY: Number(padYInput.value),
-  image: null,
-  imageFile: null
+  imageCount: 1,
+  layout: imageLayoutInput.value,
+  images: Array.from({ length: 4 }, () => ({
+    image: null,
+    file: null,
+    rotation: 0,
+    margin: { left: 0, right: 0, top: 0, bottom: 0 }
+  }))
 };
 
 const VIEWCUBE_SIZE = 120;
@@ -128,7 +133,7 @@ scene.add(imagePlane);
 const dimensionGroup = new THREE.Group();
 scene.add(dimensionGroup);
 const dimensionLabels = createDimensionLabels();
-let currentImageObjectUrl = null;
+const currentImageObjectUrls = Array.from({ length: 4 }, () => null);
 
 const SCREW_EDGE_OFFSET_IN = 0.5;
 const M4_DIAMETER_IN = 4 / 25.4;
@@ -159,6 +164,7 @@ function updatePanelGeometry() {
 // image texture updates
 function updateFrontTexture() {
   const printable = getPrintableSize();
+  const maxTextureSize = Math.min(4096, renderer.capabilities.maxTextureSize || 4096);
 
   const holeCenters = getScrewHoleCenters({
     width: state.width,
@@ -166,38 +172,42 @@ function updateFrontTexture() {
     innerW: printable.width,
     innerH: printable.height
   });
+  const layoutImages = getLayoutImages().filter((entry) => entry?.image);
+  const textureOptions = {
+    layout: state.layout,
+    maxSize: maxTextureSize,
+    ppi: 220,
+    count: Math.max(1, layoutImages.length)
+  };
   if (frontMaterial.alphaMap) {
     frontMaterial.alphaMap.dispose();
   }
   frontMaterial.alphaMap = createHoleMaskTexture(
     printable.width,
     printable.height,
-    holeCenters.map((center) => ({ ...center, r: M4_RADIUS_IN }))
+    holeCenters.map((center) => ({ ...center, r: M4_RADIUS_IN })),
+    textureOptions
   );
 
-  if (!state.image) {
+  const activeCount = layoutImages.length;
+  if (activeCount === 0) {
     if (frontMaterial.map) {
       frontMaterial.map.dispose();
       frontMaterial.map = null;
     }
     frontMaterial.needsUpdate = true;
-    imageStatus.textContent = 'No image loaded';
+    imageStatus.textContent = 'No images loaded';
     updateImageControlsEnabled(false);
     return;
   }
 
-  const texture = createFittedTexture(
-    state.image,
-    printable.width,
-    printable.height,
-    { x: state.padX, y: state.padY }
-  );
+  const texture = createLayoutTexture(layoutImages, printable.width, printable.height, textureOptions);
   if (frontMaterial.map) {
     frontMaterial.map.dispose();
   }
   frontMaterial.map = texture;
   frontMaterial.needsUpdate = true;
-  imageStatus.textContent = 'Image loaded';
+  imageStatus.textContent = `${activeCount} image${activeCount === 1 ? '' : 's'} loaded`;
   updateImageControlsEnabled(true);
 }
 
@@ -226,11 +236,6 @@ function applyDimensionInputs(source) {
   state.width = nextWidth;
   state.height = nextHeight;
   state.depth = nextDepth;
-  if (state.image) {
-    applyAutoPaddingForContain();
-  } else {
-    syncPaddingFromAspect(source);
-  }
   updatePanelGeometry();
 }
 
@@ -274,58 +279,103 @@ depthInput.addEventListener('blur', () => {
   normalizeDimensionInputs();
 });
 
-// padding listeners
-padXInput.addEventListener('input', () => {
-  state.padX = Number(padXInput.value) || 0;
-  syncPaddingFromAspect('padX');
+// image layout controls
+imageLayoutInput.addEventListener('change', () => {
+  state.layout = imageLayoutInput.value;
   updateFrontTexture();
 });
 
-padYInput.addEventListener('input', () => {
-  state.padY = Number(padYInput.value) || 0;
-  syncPaddingFromAspect('padY');
-  updateFrontTexture();
+addImageSlotBottomBtn.addEventListener('click', () => {
+  setImageCount(state.imageCount + 1);
 });
 
-// image upload
-imageInput.addEventListener('change', (event) => {
-  const file = event.target.files?.[0];
-  if (!file) {
-    state.image = null;
-    state.imageFile = null;
-    if (currentImageObjectUrl) {
-      URL.revokeObjectURL(currentImageObjectUrl);
-      currentImageObjectUrl = null;
+// image slot handlers
+imageSlots.forEach((slot) => {
+  const index = Number(slot.dataset.index);
+  const fileInput = slot.querySelector('.image-input');
+  const rotationInput = slot.querySelector('.rotation');
+  const advancedToggle = slot.querySelector('.toggle-advanced');
+  const advancedPanel = slot.querySelector('.slot-advanced');
+  const marginToggle = slot.querySelector('.toggle-margins');
+  const marginPanel = slot.querySelector('.slot-margins');
+  const marginLeft = slot.querySelector('.margin-left');
+  const marginRight = slot.querySelector('.margin-right');
+  const marginTop = slot.querySelector('.margin-top');
+  const marginBottom = slot.querySelector('.margin-bottom');
+  const removeBtn = slot.querySelector('.remove-slot');
+
+  if (advancedPanel) {
+    advancedPanel.classList.add('collapsed');
+  }
+  if (advancedToggle && advancedPanel) {
+    advancedToggle.addEventListener('click', () => {
+      advancedPanel.classList.toggle('collapsed');
+    });
+  }
+  if (marginPanel) {
+    marginPanel.classList.add('collapsed');
+  }
+  if (marginToggle && marginPanel) {
+    marginToggle.addEventListener('click', () => {
+      marginPanel.classList.toggle('collapsed');
+    });
+  }
+
+  fileInput.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      state.images[index].image = null;
+      state.images[index].file = null;
+      if (currentImageObjectUrls[index]) {
+        URL.revokeObjectURL(currentImageObjectUrls[index]);
+        currentImageObjectUrls[index] = null;
+      }
+      updateFrontTexture();
+      return;
     }
-    updateFrontTexture();
-    return;
-  }
 
-  const image = new Image();
-  image.onload = () => {
-    state.image = image;
-    state.imageFile = file;
-    syncPaddingFromAspect('image');
-    updateFrontTexture();
-    if (currentImageObjectUrl) {
-      URL.revokeObjectURL(currentImageObjectUrl);
-      currentImageObjectUrl = null;
+    const image = new Image();
+    image.onload = () => {
+      state.images[index].image = image;
+      state.images[index].file = file;
+      updateFrontTexture();
+      if (currentImageObjectUrls[index]) {
+        URL.revokeObjectURL(currentImageObjectUrls[index]);
+        currentImageObjectUrls[index] = null;
+      }
+    };
+    if (currentImageObjectUrls[index]) {
+      URL.revokeObjectURL(currentImageObjectUrls[index]);
     }
-  };
-  if (currentImageObjectUrl) {
-    URL.revokeObjectURL(currentImageObjectUrl);
-  }
-  currentImageObjectUrl = URL.createObjectURL(file);
-  image.src = currentImageObjectUrl;
-});
+    currentImageObjectUrls[index] = URL.createObjectURL(file);
+    image.src = currentImageObjectUrls[index];
+  });
 
-// reset padding action
-resetPaddingBtn.addEventListener('click', () => {
-  if (!state.image) {
-    return;
-  }
-  applyAutoPaddingForContain();
-  updateFrontTexture();
+  rotationInput.addEventListener('change', () => {
+    state.images[index].rotation = Number(rotationInput.value) || 0;
+    updateFrontTexture();
+  });
+
+  marginLeft.addEventListener('input', () => {
+    state.images[index].margin.left = Number(marginLeft.value) || 0;
+    updateFrontTexture();
+  });
+  marginRight.addEventListener('input', () => {
+    state.images[index].margin.right = Number(marginRight.value) || 0;
+    updateFrontTexture();
+  });
+  marginTop.addEventListener('input', () => {
+    state.images[index].margin.top = Number(marginTop.value) || 0;
+    updateFrontTexture();
+  });
+  marginBottom.addEventListener('input', () => {
+    state.images[index].margin.bottom = Number(marginBottom.value) || 0;
+    updateFrontTexture();
+  });
+
+  removeBtn.addEventListener('click', () => {
+    removeImageSlot(index);
+  });
 });
 
 // panel collapse toggle
@@ -345,39 +395,69 @@ sectionToggles.forEach((toggle) => {
   });
 });
 
+function openHelp() {
+  if (!helpOverlay) return;
+  helpOverlay.classList.add('is-visible');
+  helpOverlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeHelp() {
+  if (!helpOverlay) return;
+  helpOverlay.classList.remove('is-visible');
+  helpOverlay.setAttribute('aria-hidden', 'true');
+}
+
+if (helpBtn) {
+  helpBtn.addEventListener('click', () => {
+    openHelp();
+  });
+}
+
+if (helpOverlay) {
+  helpOverlay.addEventListener('click', (event) => {
+    if (event.target === helpOverlay) {
+      closeHelp();
+    }
+  });
+}
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeHelp();
+  }
+});
+
 // match width to image
 matchWidthBtn.addEventListener('click', () => {
-  if (!state.image) {
+  const primaryImage = getPrimaryImage();
+  if (!primaryImage) {
     return;
   }
-  const imgAspect = state.image.width / state.image.height;
   const nextWidth = parseDimension(
-    state.height * imgAspect,
+    getMatchedWidth(),
     state.width,
     1
   );
   state.width = nextWidth;
   widthInput.value = state.width.toFixed(2);
-  applyAutoPaddingForContain();
   updatePanelGeometry();
   updateFrontTexture();
 });
 
 // match height to image
 matchHeightBtn.addEventListener('click', () => {
-  if (!state.image) {
+  const primaryImage = getPrimaryImage();
+  if (!primaryImage) {
     return;
   }
-  const imgAspect = state.image.width / state.image.height;
   const nextHeight = parseDimension(
-    state.width / imgAspect,
+    getMatchedHeight(),
     state.height,
     1,
     35
   );
   state.height = nextHeight;
   heightInput.value = state.height.toFixed(2);
-  applyAutoPaddingForContain();
   updatePanelGeometry();
   updateFrontTexture();
 });
@@ -403,10 +483,10 @@ exportBtn.addEventListener('click', async () => {
       width: state.width,
       height: state.height,
       depth: state.depth,
-      padX: state.padX,
-      padY: state.padY
+      padX: 0,
+      padY: 0
     },
-    imageFile: state.imageFile,
+    imageFiles: getActiveFiles(),
     chamfer: {
       enabled: state.chamfer,
       depth: state.chamfer ? state.depth * 0.3 : 0
@@ -460,6 +540,8 @@ function animate() {
 
 animate();
 onResize();
+updateSlotVisibility();
+openHelp();
 
 // dimension label creation
 function createDimensionLabels() {
@@ -576,84 +658,298 @@ updateDimensionHelpers();
 
 // image control enablement
 function updateImageControlsEnabled(enabled) {
-  resetPaddingBtn.disabled = !enabled;
   matchWidthBtn.disabled = !enabled;
   matchHeightBtn.disabled = !enabled;
 }
 
-// auto padding based on aspect
-function applyAutoPaddingForContain() {
-  if (!state.image) {
-    return;
-  }
-
-  const imgAspect = state.image.width / state.image.height;
-  const faceAspect = state.width / state.height;
-
-  if (imgAspect >= faceAspect) {
-    state.padX = 0;
-    const contentH = state.width / imgAspect;
-    state.padY = Math.max(0, (state.height - contentH) / 2);
-  } else {
-    state.padY = 0;
-    const contentW = state.height * imgAspect;
-    state.padX = Math.max(0, (state.width - contentW) / 2);
-  }
-
-  if (state.padX < 0.01) state.padX = 0;
-  if (state.padY < 0.01) state.padY = 0;
-
-  padXInput.value = state.padX.toFixed(2);
-  padYInput.value = state.padY.toFixed(2);
+function hasAnyImage() {
+  return state.images.slice(0, state.imageCount).some((entry) => entry.image);
 }
 
-// sync padding to keep image aspect
-function syncPaddingFromAspect(source) {
-  if (!state.image) {
-    padXInput.value = state.padX.toFixed(2);
-    padYInput.value = state.padY.toFixed(2);
+function getLayoutImages() {
+  return state.images
+    .slice(0, state.imageCount)
+    .map((entry) => ({
+      image: entry.image,
+      rotation: entry.rotation,
+      margin: entry.margin
+    }));
+}
+
+function getActiveFiles() {
+  return state.images
+    .slice(0, state.imageCount)
+    .map((entry) => entry.file)
+    .filter(Boolean);
+}
+
+function getPrimaryImage() {
+  const entry = state.images.find((img, index) => index < state.imageCount && img.image);
+  return entry?.image ?? null;
+}
+
+function updateSlotVisibility() {
+  imageSlots.forEach((slot, index) => {
+    if (index < state.imageCount) {
+      slot.classList.remove('hidden');
+    } else {
+      slot.classList.add('hidden');
+    }
+  });
+
+  addImageSlotBottomBtn.disabled = state.imageCount >= 4;
+}
+
+function setImageCount(nextCount) {
+  const count = Math.min(4, Math.max(1, nextCount));
+  if (count === state.imageCount) return;
+  if (count < state.imageCount) {
+    for (let i = count; i < state.imageCount; i += 1) {
+      const entry = state.images[i];
+      if (entry?.image) {
+        entry.image = null;
+        entry.file = null;
+      }
+      if (currentImageObjectUrls[i]) {
+        URL.revokeObjectURL(currentImageObjectUrls[i]);
+        currentImageObjectUrls[i] = null;
+      }
+      const slot = imageSlots[i];
+      if (slot) {
+        const fileInput = slot.querySelector('.image-input');
+        if (fileInput) fileInput.value = '';
+      }
+    }
+  }
+  state.imageCount = count;
+  updateSlotVisibility();
+  updateFrontTexture();
+}
+
+function removeImageSlot(index) {
+  if (state.imageCount <= 1) {
     return;
   }
-
-  const imgAspect = state.image.width / state.image.height;
-  const faceAspect = state.width / state.height;
-  const minContent = 0.1;
-  const maxPadX = Math.max(0, (state.width - minContent) / 2);
-  const maxPadY = Math.max(0, (state.height - minContent) / 2);
-
-  if (source === 'padY') {
-    const minPadY = Math.max(0, (state.height - state.width / imgAspect) / 2);
-    const clampedPadY = Math.min(Math.max(state.padY, minPadY), maxPadY);
-    const contentH = state.height - clampedPadY * 2;
-    const contentW = contentH * imgAspect;
-    const padX = Math.max(0, Math.min((state.width - contentW) / 2, maxPadX));
-    state.padY = clampedPadY;
-    state.padX = padX;
-  } else if (source === 'padX') {
-    const minPadX = Math.max(0, (state.width - state.height * imgAspect) / 2);
-    const clampedPadX = Math.min(Math.max(state.padX, minPadX), maxPadX);
-    const contentW = state.width - clampedPadX * 2;
-    const contentH = contentW / imgAspect;
-    const padY = Math.max(0, Math.min((state.height - contentH) / 2, maxPadY));
-    state.padX = clampedPadX;
-    state.padY = padY;
-  } else {
-    if (imgAspect >= faceAspect) {
-      state.padX = 0;
-      const contentW = state.width - state.padX * 2;
-      const contentH = contentW / imgAspect;
-      state.padY = Math.max(0, Math.min((state.height - contentH) / 2, maxPadY));
-    } else {
-      state.padY = 0;
-      const contentH = state.height - state.padY * 2;
-      const contentW = contentH * imgAspect;
-      state.padX = Math.max(0, Math.min((state.width - contentW) / 2, maxPadX));
+  for (let i = index; i < state.imageCount - 1; i += 1) {
+    state.images[i] = { ...state.images[i + 1], margin: { ...state.images[i + 1].margin } };
+    const fromSlot = imageSlots[i + 1];
+    const toSlot = imageSlots[i];
+    if (fromSlot && toSlot) {
+      const toFile = toSlot.querySelector('.image-input');
+      if (toFile) toFile.value = '';
+      const fromRotation = fromSlot.querySelector('.rotation');
+      const toRotation = toSlot.querySelector('.rotation');
+      if (fromRotation && toRotation) {
+        toRotation.value = fromRotation.value;
+      }
+      const fromMargins = {
+        left: fromSlot.querySelector('.margin-left')?.value ?? 0,
+        right: fromSlot.querySelector('.margin-right')?.value ?? 0,
+        top: fromSlot.querySelector('.margin-top')?.value ?? 0,
+        bottom: fromSlot.querySelector('.margin-bottom')?.value ?? 0
+      };
+      const toMargins = {
+        left: toSlot.querySelector('.margin-left'),
+        right: toSlot.querySelector('.margin-right'),
+        top: toSlot.querySelector('.margin-top'),
+        bottom: toSlot.querySelector('.margin-bottom')
+      };
+      if (toMargins.left) toMargins.left.value = fromMargins.left;
+      if (toMargins.right) toMargins.right.value = fromMargins.right;
+      if (toMargins.top) toMargins.top.value = fromMargins.top;
+      if (toMargins.bottom) toMargins.bottom.value = fromMargins.bottom;
     }
   }
 
-  padXInput.value = state.padX.toFixed(2);
-  padYInput.value = state.padY.toFixed(2);
+  const lastIndex = state.imageCount - 1;
+  const last = state.images[lastIndex];
+  if (last?.image) {
+    last.image = null;
+    last.file = null;
+  }
+  if (currentImageObjectUrls[lastIndex]) {
+    URL.revokeObjectURL(currentImageObjectUrls[lastIndex]);
+    currentImageObjectUrls[lastIndex] = null;
+  }
+
+  state.imageCount -= 1;
+  const lastSlot = imageSlots[state.imageCount];
+  if (lastSlot) {
+    const fileInput = lastSlot.querySelector('.image-input');
+    if (fileInput) fileInput.value = '';
+  }
+
+  updateSlotVisibility();
+  updateFrontTexture();
 }
+
+
+function getLayoutGrid() {
+  const count = Math.max(1, state.imageCount);
+  let rows = 1;
+  let cols = count;
+  if (state.layout === 'vertical') {
+    rows = count;
+    cols = 1;
+  } else if (state.layout === 'grid') {
+    rows = 2;
+    cols = 2;
+  }
+  return { rows, cols, count };
+}
+
+function getImageAspect(entry) {
+  if (!entry?.image) return null;
+  const rotation = Number(entry.rotation || 0) % 360;
+  const rotated = rotation % 180 !== 0;
+  const w = rotated ? entry.image.height : entry.image.width;
+  const h = rotated ? entry.image.width : entry.image.height;
+  if (!w || !h) return null;
+  return w / h;
+}
+
+function getSlotMargins(index) {
+  const margin = state.images[index]?.margin ?? {};
+  return {
+    left: Math.max(0, margin.left ?? 0),
+    right: Math.max(0, margin.right ?? 0),
+    top: Math.max(0, margin.top ?? 0),
+    bottom: Math.max(0, margin.bottom ?? 0)
+  };
+}
+
+function getMatchedHeight() {
+  const active = state.images.slice(0, state.imageCount).filter((entry) => entry.image);
+  if (active.length === 0) return state.height;
+
+  if (state.layout === 'horizontal') {
+    const sumAspects = active.reduce((sum, entry) => sum + (getImageAspect(entry) ?? 0), 0);
+    const totalMarginsX = active.reduce((sum, entry) => {
+      const m = getSlotMargins(state.images.indexOf(entry));
+      return sum + m.left + m.right;
+    }, 0);
+    const maxMarginsY = active.reduce((max, entry) => {
+      const m = getSlotMargins(state.images.indexOf(entry));
+      return Math.max(max, m.top + m.bottom);
+    }, 0);
+
+    const targetH = (state.width - totalMarginsX) / Math.max(0.001, sumAspects);
+    return Math.max(1, targetH + maxMarginsY);
+  }
+
+  if (state.layout === 'vertical') {
+    let totalH = 0;
+    active.forEach((entry) => {
+      const index = state.images.indexOf(entry);
+      const margins = getSlotMargins(index);
+      const aspect = getImageAspect(entry) ?? 0.001;
+      const innerW = Math.max(0.01, state.width - margins.left - margins.right);
+      totalH += (innerW / aspect) + margins.top + margins.bottom;
+    });
+    return Math.max(1, totalH);
+  }
+
+  const { rows, cols } = getLayoutGrid();
+  const slotW = state.width / cols;
+  let requiredSlotH = 0;
+
+  state.images.slice(0, state.imageCount).forEach((entry, index) => {
+    const aspect = getImageAspect(entry);
+    if (!aspect) return;
+    const margins = getSlotMargins(index);
+    const slotWEffective = Math.max(0.01, slotW - margins.left - margins.right);
+    const neededH = (slotWEffective / aspect) + margins.top + margins.bottom;
+    requiredSlotH = Math.max(requiredSlotH, neededH);
+  });
+
+  return Math.max(1, requiredSlotH * rows);
+}
+
+function getMatchedWidth() {
+  const active = state.images.slice(0, state.imageCount).filter((entry) => entry.image);
+  if (active.length === 0) return state.width;
+
+  if (state.layout === 'horizontal') {
+    const sumAspects = active.reduce((sum, entry) => sum + (getImageAspect(entry) ?? 0), 0);
+    const totalMarginsX = active.reduce((sum, entry) => {
+      const m = getSlotMargins(state.images.indexOf(entry));
+      return sum + m.left + m.right;
+    }, 0);
+    const maxMarginsY = active.reduce((max, entry) => {
+      const m = getSlotMargins(state.images.indexOf(entry));
+      return Math.max(max, m.top + m.bottom);
+    }, 0);
+    const targetH = state.height - maxMarginsY;
+    return Math.max(1, (targetH * Math.max(0.001, sumAspects)) + totalMarginsX);
+  }
+
+  if (state.layout === 'vertical') {
+    const sumInvAspects = active.reduce((sum, entry) => {
+      const aspect = getImageAspect(entry) ?? 0.001;
+      return sum + (aspect > 0 ? 1 / aspect : 0);
+    }, 0);
+    const totalMarginsY = active.reduce((sum, entry) => {
+      const m = getSlotMargins(state.images.indexOf(entry));
+      return sum + m.top + m.bottom;
+    }, 0);
+    const maxMarginsX = active.reduce((max, entry) => {
+      const m = getSlotMargins(state.images.indexOf(entry));
+      return Math.max(max, m.left + m.right);
+    }, 0);
+    const targetW = (state.height - totalMarginsY) / Math.max(0.001, sumInvAspects);
+    return Math.max(1, targetW + maxMarginsX);
+  }
+
+  const { rows, cols } = getLayoutGrid();
+  const slotH = state.height / rows;
+  let requiredSlotW = 0;
+
+  state.images.slice(0, state.imageCount).forEach((entry, index) => {
+    const aspect = getImageAspect(entry);
+    if (!aspect) return;
+    const margins = getSlotMargins(index);
+    const slotHEffective = Math.max(0.01, slotH - margins.top - margins.bottom);
+    const neededW = (slotHEffective * aspect) + margins.left + margins.right;
+    requiredSlotW = Math.max(requiredSlotW, neededW);
+  });
+
+  return Math.max(1, requiredSlotW * cols);
+}
+
+function getLayoutSlotsInches() {
+  const count = Math.max(1, state.imageCount);
+  let rows = 1;
+  let cols = count;
+  if (state.layout === 'vertical') {
+    rows = count;
+    cols = 1;
+  } else if (state.layout === 'grid') {
+    rows = 2;
+    cols = 2;
+  }
+
+  const slotW = state.width / cols;
+  const slotH = state.height / rows;
+  const slots = [];
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      if (slots.length >= count) break;
+      slots.push({ width: slotW, height: slotH });
+    }
+  }
+  return slots;
+}
+
+function getSlotSize(index) {
+  const slots = getLayoutSlotsInches();
+  const base = slots[index] ?? { width: state.width, height: state.height };
+  const margins = getSlotMargins(index);
+  return {
+    width: Math.max(0.01, base.width - margins.left - margins.right),
+    height: Math.max(0.01, base.height - margins.top - margins.bottom)
+  };
+}
+
 
 // chamfer helpers
 function getChamferBevel() {

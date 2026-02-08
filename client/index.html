@@ -23,10 +23,13 @@
               <div class="title">Panel Builder</div>
               <div class="subtitle">CAD Preview</div>
             </div>
-            <!-- panel collapse toggle -->
-            <button id="togglePanel" class="icon-toggle" type="button" aria-label="Collapse panel">
-              <span class="chevron">▾</span>
-            </button>
+            <div class="panel-header-actions">
+              <button id="helpBtn" class="secondary help-button" type="button">Help</button>
+              <!-- panel collapse toggle -->
+              <button id="togglePanel" class="icon-toggle" type="button" aria-label="Collapse panel">
+                <span class="chevron">▾</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -62,19 +65,20 @@
             <div class="section-title">Front Image</div>
             <button class="section-toggle" type="button" aria-label="Collapse section">▾</button>
           </div>
+          <div class="field">
+            <span>Image Slots</span>
+            <div class="button-row">
+              <!-- add image button is placed below slots -->
+            </div>
+          </div>
           <label class="field">
-            <span>Upload</span>
-            <input id="image" type="file" accept="image/*" />
+            <span>Layout</span>
+            <select id="imageLayout">
+              <option value="horizontal" selected>Side-by-Side</option>
+              <option value="vertical">Stacked</option>
+              <option value="grid">Grid (2x2)</option>
+            </select>
           </label>
-          <label class="field">
-            <span>Horizontal Padding (in)</span>
-            <input id="padX" type="number" min="0" step="0.1" value="0" />
-          </label>
-          <label class="field">
-            <span>Vertical Padding (in)</span>
-            <input id="padY" type="number" min="0" step="0.1" value="0" />
-          </label>
-          <button id="resetPadding" class="secondary" type="button">Reset Padding to Aspect</button>
           <div class="subsection">
             <div class="section-title">Scale Proportionally</div>
             <div class="button-row">
@@ -82,7 +86,171 @@
               <button id="matchHeight" class="secondary" type="button">Match Height to Image</button>
             </div>
           </div>
-          <div id="imageStatus" class="status">No image loaded</div>
+          <div class="subsection">
+            <div class="section-title">Image Slots</div>
+            <div id="imageSlots" class="slot-list">
+              <div class="slot" data-index="0">
+                <label class="field">
+                  <span>Image 1</span>
+                  <input class="image-input" type="file" accept="image/*" />
+                </label>
+                  <button class="secondary toggle-advanced" type="button">Advanced</button>
+                <div class="slot-advanced">
+                  <label class="field">
+                    <span>Rotation</span>
+                    <select class="rotation">
+                      <option value="0">0°</option>
+                      <option value="90">90°</option>
+                      <option value="180">180°</option>
+                      <option value="270">270°</option>
+                      <option value="360">360°</option>
+                    </select>
+                  </label>
+                  <button class="secondary toggle-margins" type="button">Margins</button>
+                  <div class="slot-margins">
+                    <label class="field">
+                      <span>Left Margin (in)</span>
+                      <input class="margin-left" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Right Margin (in)</span>
+                      <input class="margin-right" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Top Margin (in)</span>
+                      <input class="margin-top" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Bottom Margin (in)</span>
+                      <input class="margin-bottom" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                  </div>
+                  <button class="danger remove-slot" type="button">Remove Image</button>
+                </div>
+              </div>
+              <div class="slot" data-index="1">
+                <label class="field">
+                  <span>Image 2</span>
+                  <input class="image-input" type="file" accept="image/*" />
+                </label>
+                  <button class="secondary toggle-advanced" type="button">Advanced</button>
+                <div class="slot-advanced">
+                  <label class="field">
+                    <span>Rotation</span>
+                    <select class="rotation">
+                      <option value="0">0°</option>
+                      <option value="90">90°</option>
+                      <option value="180">180°</option>
+                      <option value="270">270°</option>
+                      <option value="360">360°</option>
+                    </select>
+                  </label>
+                  <button class="secondary toggle-margins" type="button">Margins</button>
+                  <div class="slot-margins">
+                    <label class="field">
+                      <span>Left Margin (in)</span>
+                      <input class="margin-left" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Right Margin (in)</span>
+                      <input class="margin-right" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Top Margin (in)</span>
+                      <input class="margin-top" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Bottom Margin (in)</span>
+                      <input class="margin-bottom" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                  </div>
+                  <button class="danger remove-slot" type="button">Remove Image</button>
+                </div>
+              </div>
+              <div class="slot" data-index="2">
+                <label class="field">
+                  <span>Image 3</span>
+                  <input class="image-input" type="file" accept="image/*" />
+                </label>
+                  <button class="secondary toggle-advanced" type="button">Advanced</button>
+                <div class="slot-advanced">
+                  <label class="field">
+                    <span>Rotation</span>
+                    <select class="rotation">
+                      <option value="0">0°</option>
+                      <option value="90">90°</option>
+                      <option value="180">180°</option>
+                      <option value="270">270°</option>
+                      <option value="360">360°</option>
+                    </select>
+                  </label>
+                  <button class="secondary toggle-margins" type="button">Margins</button>
+                  <div class="slot-margins">
+                    <label class="field">
+                      <span>Left Margin (in)</span>
+                      <input class="margin-left" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Right Margin (in)</span>
+                      <input class="margin-right" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Top Margin (in)</span>
+                      <input class="margin-top" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Bottom Margin (in)</span>
+                      <input class="margin-bottom" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                  </div>
+                  <button class="danger remove-slot" type="button">Remove Image</button>
+                </div>
+              </div>
+              <div class="slot" data-index="3">
+                <label class="field">
+                  <span>Image 4</span>
+                  <input class="image-input" type="file" accept="image/*" />
+                </label>
+                  <button class="secondary toggle-advanced" type="button">Advanced</button>
+                <div class="slot-advanced">
+                  <label class="field">
+                    <span>Rotation</span>
+                    <select class="rotation">
+                      <option value="0">0°</option>
+                      <option value="90">90°</option>
+                      <option value="180">180°</option>
+                      <option value="270">270°</option>
+                      <option value="360">360°</option>
+                    </select>
+                  </label>
+                  <button class="secondary toggle-margins" type="button">Margins</button>
+                  <div class="slot-margins">
+                    <label class="field">
+                      <span>Left Margin (in)</span>
+                      <input class="margin-left" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Right Margin (in)</span>
+                      <input class="margin-right" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Top Margin (in)</span>
+                      <input class="margin-top" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                    <label class="field">
+                      <span>Bottom Margin (in)</span>
+                      <input class="margin-bottom" type="number" min="0" step="0.05" value="0" />
+                    </label>
+                  </div>
+                  <button class="danger remove-slot" type="button">Remove Image</button>
+                </div>
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="addImageSlotBottom" class="secondary" type="button">Add Image</button>
+            </div>
+          </div>
+          <div id="imageStatus" class="status">No images loaded</div>
         </div>
 
         <!-- screwholes section -->
@@ -118,6 +286,48 @@
         </div>
         </div>
       </aside>
+    </div>
+
+    <div id="helpOverlay" class="help-overlay" aria-hidden="true">
+      <div class="help-modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <h2 id="helpTitle">Quick Guide</h2>
+        <div class="help-body">
+          <h3>Navigation</h3>
+          <div class="help-gestures">
+            <div class="help-gesture">
+              <span class="help-action">rotate</span>
+              <span class="help-keys">
+                <span class="key">mouse drag</span>
+              </span>
+            </div>
+            <div class="help-gesture">
+              <span class="help-action">zoom</span>
+              <span class="help-keys">
+                <span class="key">scroll</span>
+              </span>
+            </div>
+            <div class="help-gesture">
+              <span class="help-action">translate</span>
+              <span class="help-keys">
+                <span class="key">shift</span>
+                <span class="key">drag</span>
+              </span>
+            </div>
+          </div>
+          <h3>Viewcube</h3>
+          <ul>
+            <li>click a face to snap to that view</li>
+            <li>drag the cube to rotate the camera</li>
+          </ul>
+          <h3>Panel</h3>
+          <ul>
+            <li>set width height and depth in inches</li>
+            <li>add up to four images and choose a layout</li>
+            <li>use margins to add space between images</li>
+          </ul>
+          <div class="help-note">click outside this guide to close</div>
+        </div>
+      </div>
     </div>
 
     <!-- app script -->
