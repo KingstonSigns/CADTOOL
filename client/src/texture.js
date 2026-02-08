@@ -58,3 +58,34 @@ export function createFittedTexture(image, faceWidth, faceHeight, padding) {
   texture.needsUpdate = true;
   return texture;
 }
+
+export function createHoleMaskTexture(faceWidth, faceHeight, holes) {
+  const { width, height } = getCanvasSize(faceWidth, faceHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+
+  if (Array.isArray(holes)) {
+    ctx.fillStyle = '#000000';
+    holes.forEach((hole) => {
+      const xPx = width / 2 + (hole.x / faceWidth) * width;
+      const yPx = height / 2 - (hole.y / faceHeight) * height;
+      const rX = (hole.r / faceWidth) * width;
+      const rY = (hole.r / faceHeight) * height;
+      ctx.beginPath();
+      ctx.ellipse(xPx, yPx, rX, rY, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}

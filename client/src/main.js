@@ -1,9 +1,10 @@
 // three js core and helpers
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 // texture and export utilities
-import { createFittedTexture } from './texture.js';
+import { createFittedTexture, createHoleMaskTexture } from './texture.js';
 import { exportZip } from './export.js';
 
 // panel ui elements
@@ -18,6 +19,7 @@ const padYInput = document.querySelector('#padY');
 const resetPaddingBtn = document.querySelector('#resetPadding');
 const matchWidthBtn = document.querySelector('#matchWidth');
 const matchHeightBtn = document.querySelector('#matchHeight');
+const screwHolesInput = document.querySelector('#screwholes');
 const togglePanelBtn = document.querySelector('#togglePanel');
 const exportBtn = document.querySelector('#exportBtn');
 const imageStatus = document.querySelector('#imageStatus');
@@ -31,11 +33,15 @@ const state = {
   height: Number(heightInput.value),
   depth: Number(depthInput.value),
   chamfer: chamferInput.checked,
+  screwHoles: screwHolesInput?.checked ?? false,
   padX: Number(padXInput.value),
   padY: Number(padYInput.value),
   image: null,
   imageFile: null
 };
+
+const VIEWCUBE_SIZE = 120;
+const VIEWCUBE_MARGIN = 12;
 
 // scene setup
 const scene = new THREE.Scene();
@@ -51,7 +57,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(viewport.clientWidth, viewport.clientHeight);
 renderer.shadowMap.enabled = true;
+renderer.autoClear = false;
 viewport.appendChild(renderer.domElement);
+
+// viewcube renders in the main renderer to avoid multi-context issues
 
 // label renderer for dimension text
 const labelRenderer = new CSS2DRenderer();
@@ -107,6 +116,8 @@ const frontMaterial = new THREE.MeshBasicMaterial({
   color: 0xffffff
 });
 frontMaterial.toneMapped = false;
+frontMaterial.transparent = true;
+frontMaterial.alphaTest = 0.5;
 
 // panel mesh and image plane
 let mesh = createPanelMesh();
@@ -117,6 +128,11 @@ scene.add(imagePlane);
 const dimensionGroup = new THREE.Group();
 scene.add(dimensionGroup);
 const dimensionLabels = createDimensionLabels();
+let currentImageObjectUrl = null;
+
+const SCREW_EDGE_OFFSET_IN = 0.5;
+const M4_DIAMETER_IN = 4 / 25.4;
+const M4_RADIUS_IN = M4_DIAMETER_IN / 2;
 
 // panel mesh creation
 function createPanelMesh() {
@@ -142,21 +158,43 @@ function updatePanelGeometry() {
 
 // image texture updates
 function updateFrontTexture() {
+  const printable = getPrintableSize();
+
+  const holeCenters = getScrewHoleCenters({
+    width: state.width,
+    height: state.height,
+    innerW: printable.width,
+    innerH: printable.height
+  });
+  if (frontMaterial.alphaMap) {
+    frontMaterial.alphaMap.dispose();
+  }
+  frontMaterial.alphaMap = createHoleMaskTexture(
+    printable.width,
+    printable.height,
+    holeCenters.map((center) => ({ ...center, r: M4_RADIUS_IN }))
+  );
+
   if (!state.image) {
-    frontMaterial.map = null;
+    if (frontMaterial.map) {
+      frontMaterial.map.dispose();
+      frontMaterial.map = null;
+    }
     frontMaterial.needsUpdate = true;
     imageStatus.textContent = 'No image loaded';
     updateImageControlsEnabled(false);
     return;
   }
 
-  const printable = getPrintableSize();
   const texture = createFittedTexture(
     state.image,
     printable.width,
     printable.height,
     { x: state.padX, y: state.padY }
   );
+  if (frontMaterial.map) {
+    frontMaterial.map.dispose();
+  }
   frontMaterial.map = texture;
   frontMaterial.needsUpdate = true;
   imageStatus.textContent = 'Image loaded';
@@ -166,11 +204,11 @@ function updateFrontTexture() {
 // parse and clamp numeric inputs
 function parseDimension(value, fallback, min, max = Infinity) {
   if (value === '') {
-    return null;
+    return fallback;
   }
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    return null;
+    return fallback;
   }
   return Math.min(Math.max(parsed, min), max);
 }
@@ -214,6 +252,14 @@ chamferInput.addEventListener('change', () => {
   updatePanelGeometry();
 });
 
+// screw hole toggle
+if (screwHolesInput) {
+  screwHolesInput.addEventListener('change', () => {
+    state.screwHoles = screwHolesInput.checked;
+    updatePanelGeometry();
+  });
+}
+
 // blur normalization
 widthInput.addEventListener('blur', () => {
   applyDimensionInputs('width');
@@ -247,6 +293,10 @@ imageInput.addEventListener('change', (event) => {
   if (!file) {
     state.image = null;
     state.imageFile = null;
+    if (currentImageObjectUrl) {
+      URL.revokeObjectURL(currentImageObjectUrl);
+      currentImageObjectUrl = null;
+    }
     updateFrontTexture();
     return;
   }
@@ -257,8 +307,16 @@ imageInput.addEventListener('change', (event) => {
     state.imageFile = file;
     syncPaddingFromAspect('image');
     updateFrontTexture();
+    if (currentImageObjectUrl) {
+      URL.revokeObjectURL(currentImageObjectUrl);
+      currentImageObjectUrl = null;
+    }
   };
-  image.src = URL.createObjectURL(file);
+  if (currentImageObjectUrl) {
+    URL.revokeObjectURL(currentImageObjectUrl);
+  }
+  currentImageObjectUrl = URL.createObjectURL(file);
+  image.src = currentImageObjectUrl;
 });
 
 // reset padding action
@@ -293,7 +351,12 @@ matchWidthBtn.addEventListener('click', () => {
     return;
   }
   const imgAspect = state.image.width / state.image.height;
-  state.width = state.height * imgAspect;
+  const nextWidth = parseDimension(
+    state.height * imgAspect,
+    state.width,
+    1
+  );
+  state.width = nextWidth;
   widthInput.value = state.width.toFixed(2);
   applyAutoPaddingForContain();
   updatePanelGeometry();
@@ -306,7 +369,13 @@ matchHeightBtn.addEventListener('click', () => {
     return;
   }
   const imgAspect = state.image.width / state.image.height;
-  state.height = state.width / imgAspect;
+  const nextHeight = parseDimension(
+    state.width / imgAspect,
+    state.height,
+    1,
+    35
+  );
+  state.height = nextHeight;
   heightInput.value = state.height.toFixed(2);
   applyAutoPaddingForContain();
   updatePanelGeometry();
@@ -315,8 +384,21 @@ matchHeightBtn.addEventListener('click', () => {
 
 // export zip
 exportBtn.addEventListener('click', async () => {
+  const prevScrewHoles = state.screwHoles;
+  state.screwHoles = true;
+  const exportGeometry = createPanelGeometry();
+  state.screwHoles = prevScrewHoles;
+  exportGeometry.computeVertexNormals();
+  exportGeometry.computeBoundingBox();
+  exportGeometry.computeBoundingSphere();
+  const exportMesh = new THREE.Mesh(exportGeometry, defaultMaterial);
+  exportMesh.position.copy(mesh.position);
+  exportMesh.rotation.copy(mesh.rotation);
+  exportMesh.scale.copy(mesh.scale);
+  exportMesh.updateMatrixWorld(true);
+
   await exportZip({
-    mesh,
+    mesh: exportMesh,
     dimensions: {
       width: state.width,
       height: state.height,
@@ -330,6 +412,18 @@ exportBtn.addEventListener('click', async () => {
       depth: state.chamfer ? state.depth * 0.3 : 0
     }
   });
+
+  exportGeometry.dispose();
+});
+
+const clock = new THREE.Clock();
+const viewHelper = new ViewHelper(camera, renderer.domElement);
+viewHelper.center.copy(controls.target);
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (viewHelper.handleClick(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
 });
 
 // resize handling
@@ -351,8 +445,16 @@ window.addEventListener('resize', onResize);
 // render loop
 function animate() {
   requestAnimationFrame(animate);
+  const delta = clock.getDelta();
   controls.update();
+  if (viewHelper.animating) {
+    viewHelper.update(delta);
+  }
+  renderer.setViewport(0, 0, viewport.clientWidth, viewport.clientHeight);
+  renderer.setScissorTest(false);
+  renderer.clear();
   renderer.render(scene, camera);
+  viewHelper.render(renderer);
   labelRenderer.render(scene, camera);
 }
 
@@ -429,6 +531,10 @@ function createInfiniteGrid() {
 
 // dimension line updates
 function updateDimensionHelpers() {
+  dimensionGroup.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
   dimensionGroup.clear();
 
   const material = new THREE.LineBasicMaterial({ color: 0x9aa4b0 });
@@ -571,7 +677,25 @@ function getPrintableSize() {
 // panel geometry with optional chamfer
 function createPanelGeometry() {
   if (!state.chamfer) {
-    return new THREE.BoxGeometry(state.width, state.height, state.depth);
+    if (!state.screwHoles) {
+      return new THREE.BoxGeometry(state.width, state.height, state.depth);
+    }
+
+    const shape = createPanelShape({
+      width: state.width,
+      height: state.height,
+      innerW: state.width,
+      innerH: state.height,
+      bevel: 0
+    });
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: state.depth,
+      bevelEnabled: false,
+      steps: 1,
+      curveSegments: 24
+    });
+    geometry.center();
+    return geometry;
   }
 
   const bevel = getChamferBevel();
@@ -579,12 +703,13 @@ function createPanelGeometry() {
   const innerW = printable.width;
   const innerH = printable.height;
 
-  const shape = new THREE.Shape();
-  shape.moveTo(-innerW / 2, -innerH / 2);
-  shape.lineTo(innerW / 2, -innerH / 2);
-  shape.lineTo(innerW / 2, innerH / 2);
-  shape.lineTo(-innerW / 2, innerH / 2);
-  shape.closePath();
+  const shape = createPanelShape({
+    width: state.width,
+    height: state.height,
+    innerW,
+    innerH,
+    bevel
+  });
 
   const depth = Math.max(0.01, state.depth - bevel * 2);
   const geometry = new THREE.ExtrudeGeometry(shape, {
@@ -598,6 +723,60 @@ function createPanelGeometry() {
   });
   geometry.center();
   return geometry;
+}
+
+function createPanelShape({ width, height, innerW, innerH, bevel }) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-innerW / 2, -innerH / 2);
+  shape.lineTo(innerW / 2, -innerH / 2);
+  shape.lineTo(innerW / 2, innerH / 2);
+  shape.lineTo(-innerW / 2, innerH / 2);
+  shape.closePath();
+
+  addScrewHoles(shape, { width, height, innerW, innerH, bevel });
+  return shape;
+}
+
+function addScrewHoles(shape, { width, height, innerW, innerH, bevel }) {
+  if (!state.screwHoles) {
+    return;
+  }
+
+  const centers = getScrewHoleCenters({ width, height, innerW, innerH });
+  centers.forEach(({ x, y }) => {
+    const hole = new THREE.Path();
+    hole.absellipse(x, y, M4_RADIUS_IN, M4_RADIUS_IN, 0, Math.PI * 2, false, 0);
+    shape.holes.push(hole);
+  });
+}
+
+function getScrewHoleCenters({ width, height, innerW, innerH }) {
+  if (!state.screwHoles) {
+    return [];
+  }
+
+  const epsilon = 0.01;
+  const maxCenterX = innerW / 2 - M4_RADIUS_IN - epsilon;
+  const maxCenterY = innerH / 2 - M4_RADIUS_IN - epsilon;
+  if (maxCenterX <= 0 || maxCenterY <= 0) {
+    return [];
+  }
+
+  const desiredCenterX = width / 2 - SCREW_EDGE_OFFSET_IN;
+  const desiredCenterY = height / 2 - SCREW_EDGE_OFFSET_IN;
+
+  const centerX = Math.min(desiredCenterX, maxCenterX);
+  const centerY = Math.min(desiredCenterY, maxCenterY);
+  if (centerX <= 0 || centerY <= 0) {
+    return [];
+  }
+
+  return [
+    { x: centerX, y: centerY },
+    { x: -centerX, y: centerY },
+    { x: -centerX, y: -centerY },
+    { x: centerX, y: -centerY }
+  ];
 }
 
 // image plane creation
@@ -641,3 +820,27 @@ function addDimensionLine(start, end, lineMaterial, coneGeo, coneMaterial) {
   coneB.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
   dimensionGroup.add(coneB);
 }
+
+
+function snapCameraToDirection(direction) {
+  const dir = direction.clone().normalize();
+  const target = new THREE.Vector3(0, state.height / 2, 0);
+  const distance = camera.position.distanceTo(controls.target);
+  const up = new THREE.Vector3(0, 1, 0);
+
+  if (Math.abs(dir.y) > 0.9) {
+    const epsilon = 0.001;
+    const offset = new THREE.Vector3(0, dir.y * distance, epsilon);
+    camera.position.copy(target).add(offset);
+  } else {
+    camera.position.copy(target).add(dir.multiplyScalar(distance));
+  }
+
+  camera.up.copy(up);
+  camera.lookAt(target);
+  controls.target.copy(target);
+  controls.up.copy(up);
+  controls.update();
+}
+
+// viewcube follows camera orientation directly

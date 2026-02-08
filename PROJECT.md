@@ -7,12 +7,14 @@ A browser-based 3D configurator that lets users create a signage panel by adjust
 - Full-screen 3D environment with a right-side control panel.
 - Panel dimensions with constraints and input validation.
 - Optional 45° chamfer using 30% of depth.
+- Optional M4 screwholes at 0.5 in from panel edges.
 - Image upload mapped to the printable face area.
 - Padding controls with aspect-lock behavior.
 - “Match Width/Height to Image” proportional sizing.
 - Collapsible panel and collapsible sections.
 - Infinite grid with distance fade for CAD-like feel.
 - STL + image + metadata ZIP export.
+- Viewcube overlay for quick camera snapping.
 
 ## Goals
 - Clear, responsive 3D preview with CAD aesthetics.
@@ -28,7 +30,9 @@ A browser-based 3D configurator that lets users create a signage panel by adjust
 ## Implementation Summary
 ### Frontend
 - Three.js scene, camera, lights, and OrbitControls.
+- Viewcube overlay (ViewHelper) for quick view snapping.
 - Panel mesh geometry with optional chamfer.
+- Optional screwholes in panel geometry.
 - Separate image plane sized to printable area.
 - Canvas-based texture fitting with padding support.
 - UI controls for dimensions, image, padding, chamfer, export.

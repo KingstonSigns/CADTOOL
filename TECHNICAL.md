@@ -26,12 +26,14 @@
 - lights
 - infinite grid plane using a shader material
 - panel mesh
-- image plane for printable face preview
+- image plane for printable face preview (with alpha mask for holes)
 - dimension helpers using CSS2D labels and line geometry
+- viewcube overlay using Three.js `ViewHelper`
 
 ## Geometry Pipeline
 - base geometry uses `BoxGeometry` when chamfer is off
 - chamfer uses `ExtrudeGeometry` with `bevelEnabled`
+- optional screwholes are cut into the panel geometry with `Shape` + `ExtrudeGeometry`
 - chamfer size is `depth * 0.3` and clamped to half of width, height, and depth
 - geometry is centered and then positioned so its base sits at `y = 0`
 
@@ -39,6 +41,7 @@
 - the printable face is a separate plane that sits slightly above the front surface
 - its size is the panel width and height minus `2 * chamfer` on each axis
 - the plane is always visible so a blank printable face remains when no image is loaded
+- screwholes are shown by applying an alpha mask (holes cut out of the plane)
 
 ## Image Mapping
 - image is drawn into a canvas for aspect-aware fitting
@@ -65,6 +68,11 @@
 - printable area shrinks to match chamfered face
 - STL export includes chamfered geometry
 
+## Screwholes
+- toggle shows/hides four M4 holes
+- hole centers are 0.5 in from the panel edges (clamped inward if the printable area is too small)
+- hole diameter is 4 mm (`4 / 25.4` in)
+
 ## Infinite Grid
 - shader-based plane creates an infinite grid illusion
 - minor and major lines are shaded independently
@@ -84,6 +92,7 @@
 - chamfer angle and chamfer depth
 - image filename and timestamp
 - `JSZip` packages STL, metadata, and image file
+- exports always include screwholes, regardless of UI toggle
 
 ## Panel UI Behavior
 - main panel can collapse to a floating header box
